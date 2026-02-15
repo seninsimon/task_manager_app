@@ -22,11 +22,10 @@ export default function TasksScreen() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const queryClient = useQueryClient();
 
-  // ✅ Fetch tasks safely
+  // ✅ Fetch tasks and normalize keys
   const {
-    data: tasks = [], // always array
+    data: tasks = [],
     isLoading,
-    error,
     refetch,
   } = useQuery({
     queryKey: ['tasks'],
@@ -34,15 +33,15 @@ export default function TasksScreen() {
     select: (res) => {
       console.log('TASK RESPONSE:', res.data);
 
-      // backend may return { tasks: [] }
-      if (Array.isArray(res.data)) return res.data;
-      if (Array.isArray(res.data.tasks)) return res.data.tasks;
-
-      return [];
+      return res.data.map((task: any) => ({
+        id: task.ID,
+        title: task.Title,
+        status: task.Status,
+      }));
     },
   });
 
-  // ✅ Create task mutation
+  // ✅ Create Task
   const createMutation = useMutation({
     mutationFn: (title: string) => tasksAPI.create({ title }),
     onSuccess: () => {
@@ -51,14 +50,11 @@ export default function TasksScreen() {
       setNewTaskTitle('');
     },
     onError: (err: any) => {
-      Alert.alert(
-        'Error',
-        err.response?.data?.error || 'Failed to create task'
-      );
+      Alert.alert('Error', err.response?.data?.error || 'Failed');
     },
   });
 
-  // ✅ Update mutation
+  // ✅ Update Task
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: any) => tasksAPI.update(id, data),
     onSuccess: () => {
@@ -66,9 +62,9 @@ export default function TasksScreen() {
     },
   });
 
-  // ✅ Delete mutation
+  // ✅ Delete Task
   const deleteMutation = useMutation({
-    mutationFn: (id: any) => tasksAPI.delete(id),
+    mutationFn: (id: number) => tasksAPI.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
@@ -80,48 +76,34 @@ export default function TasksScreen() {
     router.replace('/(auth)/login');
   };
 
-  // ✅ Create task handler
+  // ✅ Create Handler
   const handleCreateTask = () => {
     if (!newTaskTitle.trim()) {
-      Alert.alert('Error', 'Please enter task title');
+      Alert.alert('Error', 'Enter task title');
       return;
     }
     createMutation.mutate(newTaskTitle);
   };
 
-  // ✅ Update handler
+  // ✅ Toggle Status
   const handleUpdateTask = (task: any) => {
-    const taskId = task.id || task._id || task.task_id;
-
-    if (!taskId) {
-      Alert.alert('Error', 'Task ID missing!');
-      return;
-    }
-
     updateMutation.mutate({
-      id: taskId,
+      id: task.id,
       data: {
         title: task.title,
-        status: task.status === 'pending' ? 'completed' : 'pending',
+        status: task.status === 'todo' ? 'done' : 'todo',
       },
     });
   };
 
-  // ✅ Delete handler
-  const handleDeleteTask = (task: any) => {
-    const taskId = task.id || task._id || task.task_id;
-
-    if (!taskId) {
-      Alert.alert('Error', 'Task ID missing!');
-      return;
-    }
-
-    Alert.alert('Delete Task', 'Are you sure?', [
+  // ✅ Delete Handler
+  const handleDeleteTask = (id: number) => {
+    Alert.alert('Delete Task?', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => deleteMutation.mutate(taskId),
+        onPress: () => deleteMutation.mutate(id),
       },
     ]);
   };
@@ -134,34 +116,20 @@ export default function TasksScreen() {
         onPress={() => handleUpdateTask(item)}
       >
         <Icon
-          name={
-            item.status === 'completed'
-              ? 'check-circle'
-              : 'radio-button-unchecked'
-          }
+          name={item.status === 'done' ? 'check-circle' : 'radio-button-unchecked'}
           size={24}
-          color={item.status === 'completed' ? '#34C759' : '#8E8E93'}
+          color={item.status === 'done' ? '#34C759' : '#8E8E93'}
         />
 
         <View style={styles.taskInfo}>
-          <Text
-            style={[
-              styles.taskTitle,
-              item.status === 'completed' && styles.completedText,
-            ]}
-          >
-            {item.title}
-          </Text>
-
-          <Text style={styles.taskStatus}>
-            {item.status?.toUpperCase() || 'PENDING'}
-          </Text>
+          <Text style={styles.taskTitle}>{item.title}</Text>
+          <Text style={styles.taskStatus}>{item.status.toUpperCase()}</Text>
         </View>
       </TouchableOpacity>
 
       <TouchableOpacity
         style={styles.deleteButton}
-        onPress={() => handleDeleteTask(item)}
+        onPress={() => handleDeleteTask(item.id)}
       >
         <Icon name="delete" size={24} color="#FF3B30" />
       </TouchableOpacity>
@@ -188,20 +156,13 @@ export default function TasksScreen() {
         </View>
       </View>
 
-      {/* Task List */}
+      {/* List */}
       <FlatList
         data={tasks}
         renderItem={renderTask}
-        keyExtractor={(item, index) =>
-          (item.id || item._id || item.task_id || index).toString()
-        }
+        keyExtractor={(item) => item.id.toString()}
         refreshControl={
           <RefreshControl refreshing={isLoading} onRefresh={refetch} />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No tasks yet 😄</Text>
-          </View>
         }
       />
 
@@ -226,9 +187,7 @@ export default function TasksScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setModalVisible(false)}>
-              <Text style={{ marginTop: 15, textAlign: 'center' }}>
-                Cancel
-              </Text>
+              <Text style={{ marginTop: 15, textAlign: 'center' }}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -237,8 +196,7 @@ export default function TasksScreen() {
   );
 }
 
-/* ---------------- Styles ---------------- */
-
+/* Styles */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
 
@@ -287,15 +245,9 @@ const styles = StyleSheet.create({
 
   taskTitle: { fontSize: 16, fontWeight: '600' },
 
-  completedText: { textDecorationLine: 'line-through', color: 'gray' },
-
   taskStatus: { fontSize: 12, color: '#777' },
 
   deleteButton: { padding: 8 },
-
-  emptyContainer: { alignItems: 'center', marginTop: 100 },
-
-  emptyText: { fontSize: 18, color: '#999' },
 
   modalOverlay: {
     flex: 1,
